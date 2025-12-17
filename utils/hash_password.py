@@ -41,7 +41,7 @@ def main():
     print(password_hash)
     print("-" * 60)
     print()
-    print("Hinweis: Diesen Hash können Sie in der loader.cfg verwenden")
+    print("Hinweis: Diesen Hash können Sie in der .env verwenden")
     print("oder das Klartext-Passwort beibehalten (wird automatisch gehasht)")
 
 if __name__ == "__main__":
