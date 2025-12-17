@@ -56,8 +56,19 @@ STOP_PASSWORD=stop456
 
 ### 3. Starten
 
+**Manuell:**
 ```bash
 python main.py
+```
+
+**Mit Start-Script:**
+```bash
+chmod +x start.sh       # Einmalig: Ausführbar machen
+./start.sh start        # Server starten
+./start.sh status       # Status prüfen
+./start.sh logs         # Live-Logs anzeigen
+./start.sh restart      # Server neustarten
+./start.sh stop         # Server stoppen
 ```
 
 Das wars! Öffne deinen Browser: `http://localhost:8282`
