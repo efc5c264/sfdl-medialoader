@@ -658,6 +658,112 @@ Content-Type: application/json\r\n
 """
         return error_response.encode('utf-8')
 
+def delete_sfdl_file(req):
+    """Delete a SFDL file from uploads directory"""
+    try:
+        # Parse JSON body from request
+        body_start = req.find('\r\n\r\n')
+        if body_start == -1:
+            error_data = {"success": False, "error": "No request body found"}
+            return f"""HTTP/1.1 400 Bad Request
+Content-Type: application/json\r\n
+
+{json.dumps(error_data)}
+""".encode('utf-8')
+        
+        body = req[body_start+4:].strip()
+        try:
+            data = json.loads(body)
+            filename = data.get('filename', '')
+        except json.JSONDecodeError:
+            error_data = {"success": False, "error": "Invalid JSON"}
+            error_response = f"""HTTP/1.1 400 Bad Request
+Content-Type: application/json\r\n
+
+{json.dumps(error_data)}
+"""
+            return error_response.encode('utf-8')
+        
+        if not filename:
+            error_data = {"success": False, "error": "Filename required"}
+            error_response = f"""HTTP/1.1 400 Bad Request
+Content-Type: application/json\r\n
+
+{json.dumps(error_data)}
+"""
+            return error_response.encode('utf-8')
+        
+        # Security: Only allow .sfdl files and prevent directory traversal
+        if not filename.endswith('.sfdl') or '/' in filename or '\\' in filename or '..' in filename:
+            error_data = {"success": False, "error": "Invalid filename"}
+            error_response = f"""HTTP/1.1 400 Bad Request
+Content-Type: application/json\r\n
+
+{json.dumps(error_data)}
+"""
+            return error_response.encode('utf-8')
+        
+        # Load files path from config
+        files_dir = os.path.join(scriptParent, 'uploads')
+        if os.path.exists(os.path.join(scriptPath, '.env')):
+            with open(os.path.join(scriptPath, '.env'), 'r') as f:
+                for line in f:
+                    if 'FILES_DIR=' in line:
+                        path = line.split('=', 1)[1].split('#')[0].strip().strip('"')
+                        path = path.replace('$pwd', scriptParent)
+                        if os.path.isabs(path):
+                            files_dir = path
+                        break
+        
+        filepath = os.path.join(files_dir, filename)
+        
+        # Check if file exists
+        if not os.path.exists(filepath):
+            error_data = {"success": False, "error": "File not found"}
+            error_response = f"""HTTP/1.1 404 Not Found
+Content-Type: application/json\r\n
+
+{json.dumps(error_data)}
+"""
+            return error_response.encode('utf-8')
+        
+        # Delete the file
+        os.remove(filepath)
+        logger.info(f"Deleted SFDL file: {filename}")
+        
+        # Remove from metadata if exists
+        metadata_file = os.path.join(files_dir, '.metadata.json')
+        if os.path.exists(metadata_file):
+            try:
+                with open(metadata_file, 'r') as mf:
+                    metadata = json.load(mf)
+                
+                if filename in metadata:
+                    del metadata[filename]
+                    
+                with open(metadata_file, 'w') as mf:
+                    json.dump(metadata, mf, indent=2)
+            except Exception as e:
+                logger.warning(f"Could not update metadata: {e}")
+        
+        response_data = {"success": True, "message": f"File {filename} deleted successfully"}
+        output = f"""HTTP/1.1 200 OK
+Content-Type: application/json\r\n
+
+{json.dumps(response_data)}
+"""
+        return output.encode('utf-8')
+    
+    except Exception as e:
+        logger.error(f"Error deleting SFDL file: {e}")
+        error_data = {"success": False, "error": f"Failed to delete file: {str(e)}"}
+        error_response = f"""HTTP/1.1 500 Internal Server Error
+Content-Type: application/json\r\n
+
+{json.dumps(error_data)}
+"""
+        return error_response.encode('utf-8')
+
 def start_loader(cmd):
     """Start with password verification"""
     try:
@@ -822,7 +928,10 @@ while server_running:
             http_response = shutdown_server(cmd)
             client_connection.sendall(http_response)
             client_connection.close()
-            break  # Exit main loop to shutdown server
+            # Only break if shutdown was successful (check response)
+            if b'"shutdown":"ok"' in http_response:
+                break  # Exit main loop to shutdown server
+            continue  # Don't send response again if password was wrong
         elif cmd == "/upload" and get_post == "POST":
             # Receive full request with body
             body = client_connection.recv(65536)
@@ -834,6 +943,9 @@ while server_running:
         elif cmd == "/update_media_type" and get_post == "POST":
             # Update media type manually
             http_response = update_media_type(req)
+        elif cmd == "/delete_sfdl" and get_post == "POST":
+            # Delete SFDL file
+            http_response = delete_sfdl_file(req)
         elif get_post == "POST":
             http_response = post_file(cmd, req)
         else:
