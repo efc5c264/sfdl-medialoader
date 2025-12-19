@@ -8,6 +8,8 @@ function openSearchModal() {
 	document.getElementById('searchModal').classList.remove('hidden');
 	document.getElementById('search-input').value = '';
 	document.getElementById('search-results').innerHTML = '';
+	// Auto-focus search input
+	document.getElementById('search-input').focus();
 	// Load data if not already loaded
 	if (seriesData.length === 0 || moviesData.length === 0) {
 		loadSearchData();
