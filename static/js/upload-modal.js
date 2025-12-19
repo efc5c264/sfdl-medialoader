@@ -62,7 +62,7 @@ function uploadFromUrl() {
 	const button = document.getElementById('modal-url-button-text');
 	
 	if (!url) {
-		alert('Bitte geben Sie eine URL ein');
+		console.log('Bitte geben Sie eine URL ein');
 		return;
 	}
 	
@@ -78,16 +78,16 @@ function uploadFromUrl() {
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			alert('SFDL erfolgreich heruntergeladen: ' + data.filename);
+			console.log('SFDL erfolgreich heruntergeladen: ' + data.filename);
 			document.getElementById('modal-sfdl-url').value = '';
 			loadSFDLFiles(); // Reload file list
 			closeUploadModal();
 		} else {
-			alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
 		}
 	})
 	.catch(error => {
-		alert('Fehler beim Herunterladen: ' + error);
+		console.error('Fehler beim Herunterladen: ' + error);
 	})
 	.finally(() => {
 		button.textContent = 'SFDL herunterladen';
@@ -134,7 +134,7 @@ modalDropZone.addEventListener('drop', (e) => {
 
 function handleModalFile(file) {
 	if (!file.name.endsWith('.sfdl')) {
-		alert('Bitte nur .sfdl Dateien hochladen');
+		console.log('Bitte nur .sfdl Dateien hochladen');
 		return;
 	}
 	
@@ -158,7 +158,7 @@ function clearModalFileSelection() {
 
 function uploadModalFile() {
 	if (!modalSelectedFile) {
-		alert('Bitte wählen Sie eine Datei aus');
+		console.log('Bitte wählen Sie eine Datei aus');
 		return;
 	}
 	
@@ -175,16 +175,16 @@ function uploadModalFile() {
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			alert('Datei erfolgreich hochgeladen: ' + data.filename);
+			console.log('Datei erfolgreich hochgeladen: ' + data.filename);
 			clearModalFileSelection();
 			loadSFDLFiles(); // Reload file list
 			closeUploadModal();
 		} else {
-			alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
 		}
 	})
 	.catch(error => {
-		alert('Fehler beim Hochladen: ' + error);
+		console.error('Fehler beim Hochladen: ' + error);
 	})
 	.finally(() => {
 		buttonText.textContent = 'Hochladen';
@@ -198,12 +198,12 @@ function uploadModalText() {
 	const buttonText = document.getElementById('modal-text-button-text');
 	
 	if (!filename) {
-		alert('Bitte geben Sie einen Dateinamen ein');
+		console.log('Bitte geben Sie einen Dateinamen ein');
 		return;
 	}
 	
 	if (!content) {
-		alert('Bitte geben Sie SFDL Inhalt ein');
+		console.log('Bitte geben Sie SFDL Inhalt ein');
 		return;
 	}
 	
@@ -221,17 +221,17 @@ function uploadModalText() {
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			alert('SFDL erfolgreich gespeichert: ' + data.filename);
+			console.log('SFDL erfolgreich gespeichert: ' + data.filename);
 			document.getElementById('modal-text-filename').value = '';
 			document.getElementById('modal-text-content').value = '';
 			loadSFDLFiles(); // Reload file list
 			closeUploadModal();
 		} else {
-			alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
 		}
 	})
 	.catch(error => {
-		alert('Fehler beim Speichern: ' + error);
+		console.error('Fehler beim Speichern: ' + error);
 	})
 	.finally(() => {
 		buttonText.textContent = 'Speichern';

@@ -254,7 +254,7 @@ $(document).ready(function()
 				{
 					loader_beendet = false;
 					
-					alert("SFDL-Loader v1 erfolgreich gestartet!");
+					console.log("SFDL-Loader v1 erfolgreich gestartet!");
 				}
 				else
 				{
@@ -277,11 +277,11 @@ $(document).ready(function()
 					$(".button_start").prop("disabled", false);
 					$(".button_stop").prop("disabled", true);
 				
-					alert("SFDL-Loader v1 erfolgreich beendet!");
+					console.log("SFDL-Loader v1 erfolgreich beendet!");
 				}
 				else
 				{
-					alert("Fehler: " + command);
+					console.error("Fehler: " + command);
 				}
 			});
 		}
@@ -310,7 +310,7 @@ $(document).ready(function()
 				}
 				else
 				{
-					alert("Fehler: " + command);
+					console.error("Fehler: " + command);
 				}
 			});
 		}
@@ -324,11 +324,11 @@ $(document).ready(function()
 				var command = data.data[0].upload
 				if(command == "ok")
 				{
-					alert("SFDL Datei (" + data.data[0].sfdl + ") erfolgreich hochgeladen!");
+					console.log("SFDL Datei (" + data.data[0].sfdl + ") erfolgreich hochgeladen!");
 				}
 				else
 				{
-					alert("Fehler: " + data.data[0].sfdl);
+					console.error("Fehler: " + data.data[0].sfdl);
 				}
 			});
 		}
@@ -342,11 +342,11 @@ $(document).ready(function()
 				var command = data.data[0].status
 				if(command == "ok")
 				{
-					alert("SFDL Datei (" + data.data[0].msg + ") erfolgreich hochgeladen!");
+					console.log("SFDL Datei (" + data.data[0].msg + ") erfolgreich hochgeladen!");
 				}
 				else
 				{
-					alert("Fehler: " + data.data[0].msg);
+					console.error("Fehler: " + data.data[0].msg);
 				}
 			});
 		}
