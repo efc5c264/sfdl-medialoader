@@ -281,10 +281,14 @@ class Downloader:
                 print("  TMDB API key not configured, skipping media detection")
                 return 'unknown'
             
-            # Check if year is present in original name (indicates movie)
+            # Check if year is present in original name
             import re
             year_match = re.search(r'\b(19\d{2}|20\d{2})\b', name)
             has_year = year_match is not None
+            year = year_match.group(1) if year_match else None
+            
+            # Check if it's a TV series (has season/episode markers)
+            is_tv_series = bool(re.search(r'\bS\d{1,2}(E\d{1,2})?\b', name, flags=re.IGNORECASE))
             
             # Clean the name for search (remove common patterns)
             clean_name = name
@@ -313,16 +317,69 @@ class Downloader:
             # Clean up extra spaces
             clean_name = ' '.join(clean_name.split()).strip()
             
-            print(f"  Searching TMDB for: '{clean_name}'")
+            if year:
+                print(f"  Searching TMDB for: '{clean_name}' (Year: {year})")
+            else:
+                print(f"  Searching TMDB for: '{clean_name}'")
             
             import urllib.request
             import urllib.parse
             import json
             
-            # If year found in filename, prioritize movie search
-            if has_year:
+            # Prioritize TV series search if season/episode markers are present
+            if is_tv_series:
+                # Try TV series search first
+                search_url = f"https://api.themoviedb.org/3/search/tv?query={urllib.parse.quote(clean_name)}&language=de"
+                if year:
+                    search_url += f"&first_air_date_year={year}"
+                
+                try:
+                    request = urllib.request.Request(search_url)
+                    request.add_header('Authorization', f'Bearer {api_key}')
+                    request.add_header('accept', 'application/json')
+                    
+                    response = urllib.request.urlopen(request, timeout=10)
+                    data = json.loads(response.read().decode('utf-8'))
+                    
+                    if data.get('results') and len(data['results']) > 0:
+                        tv_result = data['results'][0]
+                        tv_id = tv_result.get('id')
+                        tv_year = tv_result.get('first_air_date', '')[:4] if tv_result.get('first_air_date') else ''
+                        print(f"    ✓ Found TV Series: {tv_result.get('name', 'Unknown')} ({tv_year})")
+                        
+                        # Get detailed TV info for number of seasons and episodes
+                        details_url = f"https://api.themoviedb.org/3/tv/{tv_id}?language=de"
+                        try:
+                            detail_request = urllib.request.Request(details_url)
+                            detail_request.add_header('Authorization', f'Bearer {api_key}')
+                            detail_request.add_header('accept', 'application/json')
+                            detail_response = urllib.request.urlopen(detail_request, timeout=10)
+                            detail_data = json.loads(detail_response.read().decode('utf-8'))
+                            
+                            seasons = detail_data.get('number_of_seasons', 0)
+                            episodes = detail_data.get('number_of_episodes', 0)
+                            series_name = detail_data.get('name', tv_result.get('name', 'Unknown'))
+                            print(f"      Staffeln: {seasons}, Episoden: {episodes}")
+                            
+                            return {
+                                'type': 'tv',
+                                'seasons': seasons,
+                                'episodes': episodes,
+                                'name': series_name,
+                                'year': tv_year
+                            }
+                        except Exception as e:
+                            print(f"      Details error: {e}")
+                            return {'type': 'tv', 'name': tv_result.get('name', 'Unknown'), 'year': tv_year}
+                except Exception as e:
+                    print(f"    TV search error: {e}")
+            
+            # If year found in filename and not a TV series, prioritize movie search
+            elif has_year:
                 # Try movie search first
                 movie_url = f"https://api.themoviedb.org/3/search/movie?query={urllib.parse.quote(clean_name)}&language=de"
+                if year:
+                    movie_url += f"&year={year}"
                 
                 try:
                     request = urllib.request.Request(movie_url)
@@ -334,17 +391,17 @@ class Downloader:
                     
                     if data.get('results') and len(data['results']) > 0:
                         result = data['results'][0]
-                        year = result.get('release_date', '')[:4] if result.get('release_date') else ''
-                        print(f"    ✓ Found Movie: {result.get('title', 'Unknown')} ({year})")
+                        movie_year = result.get('release_date', '')[:4] if result.get('release_date') else ''
+                        print(f"    ✓ Found Movie: {result.get('title', 'Unknown')} ({movie_year})")
                         return {
                             'type': 'movie',
-                            'year': year,
+                            'year': movie_year,
                             'name': result.get('title', 'Unknown')
                         }
                 except Exception as e:
                     print(f"    Movie search error: {e}")
             
-            # Try TV series search first (or as fallback after movie)
+            # Try TV series search as fallback (without year filter if initial search failed)
             search_url = f"https://api.themoviedb.org/3/search/tv?query={urllib.parse.quote(clean_name)}&language=de"
             
             try:
@@ -358,7 +415,8 @@ class Downloader:
                 if data.get('results') and len(data['results']) > 0:
                     tv_result = data['results'][0]
                     tv_id = tv_result.get('id')
-                    print(f"    ✓ Found TV Series: {tv_result.get('name', 'Unknown')}")
+                    tv_year = tv_result.get('first_air_date', '')[:4] if tv_result.get('first_air_date') else ''
+                    print(f"    ✓ Found TV Series: {tv_result.get('name', 'Unknown')} ({tv_year})")
                     
                     # Get detailed TV info for number of seasons and episodes
                     details_url = f"https://api.themoviedb.org/3/tv/{tv_id}?language=de"
@@ -378,17 +436,20 @@ class Downloader:
                             'type': 'tv',
                             'seasons': seasons,
                             'episodes': episodes,
-                            'name': series_name
+                            'name': series_name,
+                            'year': tv_year
                         }
                     except Exception as e:
                         print(f"      Details error: {e}")
-                        return {'type': 'tv', 'name': tv_result.get('name', 'Unknown')}
+                        return {'type': 'tv', 'name': tv_result.get('name', 'Unknown'), 'year': tv_year}
             except Exception as e:
                 print(f"    TV search error: {e}")
             
-            # Try movie search as fallback (only if year was not in filename)
-            if not has_year:
+            # Try movie search as fallback (only if year was not in filename or not a TV series)
+            if not has_year or not is_tv_series:
                 search_url = f"https://api.themoviedb.org/3/search/movie?query={urllib.parse.quote(clean_name)}&language=de"
+                if year:
+                    search_url += f"&year={year}"
                 
                 try:
                     request = urllib.request.Request(search_url)
@@ -401,13 +462,13 @@ class Downloader:
                     if data.get('results') and len(data['results']) > 0:
                         movie_result = data['results'][0]
                         release_date = movie_result.get('release_date', '')
-                        year = release_date[:4] if release_date else ''
+                        movie_year = release_date[:4] if release_date else ''
                         movie_name = movie_result.get('title', 'Unknown')
-                        print(f"    ✓ Found Movie: {movie_name} ({year})")
+                        print(f"    ✓ Found Movie: {movie_name} ({movie_year})")
                         
                         return {
                             'type': 'movie',
-                            'year': year,
+                            'year': movie_year,
                             'name': movie_name
                         }
                 except Exception as e:
