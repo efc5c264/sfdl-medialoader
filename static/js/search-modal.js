@@ -209,7 +209,6 @@ function displaySearchResults() {
 						
 						<div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-400">
 							${result.year ? `<span class="flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>${result.year}</span>` : ''}
-							${result.quality ? `<span class="flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>${escapeHtml(result.quality)}</span>` : ''}
 						</div>
 						
 						${result.uploadTitle ? `<div class="text-xs text-gray-500 mt-1 truncate">${escapeHtml(result.uploadTitle)}</div>` : ''}
@@ -310,6 +309,8 @@ function extractReleaseTags(filename) {
 	if (name.includes('HDTV')) tags.push({ text: 'HDTV', category: 'source', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' });
 	if (name.includes('DVDRIP')) tags.push({ text: 'DVDRip', category: 'source', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' });
 	if (name.includes('REMUX')) tags.push({ text: 'REMUX', category: 'source', color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' });
+	if (name.includes('.CAM.')) tags.push({ text: 'CAM', category: 'source', color: 'bg-red-500/20 text-red-400 border-red-500/30' });
+	if (name.includes('.MD.')) tags.push({ text: 'MD', category: 'source', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' });
 	
 	// Streaming Anbieter
 	if (name.includes('.NF.') || name.includes('NETFLIX')) tags.push({ text: 'Netflix', category: 'provider', color: 'bg-red-600/20 text-red-400 border-red-600/30' });
