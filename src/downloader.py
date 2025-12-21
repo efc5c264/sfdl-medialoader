@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-Downloader Module - Handles parsing and downloading of SFDL files
-"""
 
 import xml.etree.ElementTree as ET
 import os
@@ -237,8 +234,8 @@ class Downloader:
                         should_remove = True
                         reason = "IDX"
                     
-                    # Check for -sample in filename (with hyphen)
-                    elif '-sample' in lower_name:
+                    # Check for sample files (both -sample and .sample.)
+                    elif '-sample' in lower_name or '.sample.' in lower_name:
                         should_remove = True
                         reason = "sample file"
                     
@@ -262,27 +259,76 @@ class Downloader:
                             dirs.remove(dirname)  # Prevent walking into deleted dir
                         except Exception as e:
                             print(f"    ✗ Error removing folder {dirname}: {e}")
-            
-            if removed_count > 0:
-                print(f"  ✓ Cleanup completed - {removed_count} item(s) removed")
-            else:
-                print("  ✓ No unwanted files found")
+
             
         except Exception as e:
-            print(f"Error in cleanup_unwanted_files: {e}")
+            pass
             import traceback
             traceback.print_exc()
     
     def detect_media_type(self, name):
-        """Detect if content is a movie or TV series using TMDB API"""
+        """Detect if content is a movie, TV series, or documentary using TMDB API"""
         try:
+            import re
+            
+            # Check if it's a documentary (but continue with TMDB search)
+            name_upper = name.upper()
+            is_doku = False
+            doku_patterns = [
+                r'\bDOKU\b',
+                r'\bDOCU\b',
+                r'\bDOCUMENTARY\b',
+                r'\bDOKUMENTATION\b',
+            ]
+            
+            for pattern in doku_patterns:
+                if re.search(pattern, name_upper):
+                    print(f"  ✓ Documentary tag detected (matched: {pattern})")
+                    is_doku = True
+                    break
+            
+            # Pre-check: Detect non-video content (Software, Games, eBooks, etc.)
+            name_upper = name.upper()
+            
+            # Software patterns
+            software_patterns = [
+                r'\b(WISO|ADOBE|MICROSOFT|OFFICE|WINDOWS|MACOS|LINUX|UBUNTU|FEDORA)\b',
+                r'\b(PHOTOSHOP|ILLUSTRATOR|PREMIERE|AFTER.?EFFECTS|INDESIGN)\b',
+                r'\b(SPARBUCH|STEUER|TAX|ACCOUNTING|BUSINESS)\b',
+                r'\b(ANTIVIRUS|KASPERSKY|NORTON|MCAFEE|AVAST|AVG)\b',
+                r'\b(VMWARE|VIRTUALBOX|DOCKER|KUBERNETES)\b',
+                r'\b(AUTOCAD|SOLIDWORKS|CATIA|REVIT|SKETCHUP)\b',
+                r'\b(V\d+\.\d+|BUILD\.\d+|VERSION\.\d+)\b',  # Version numbers
+            ]
+            
+            # Game patterns
+            game_patterns = [
+                r'\b(REPACK|CODEX|SKIDROW|PLAZA|CPY|GOLDBERG|STEAM.?RIP)\b',
+                r'\b(GOG|STEAM|EPIC|UPLAY|ORIGIN)\b',
+                r'\b(GAME|GAMEPLAY|UPDATE|DLC|EXPANSION)\b',
+                r'\b(CRACKED|CRACK|KEYGEN|PATCH)\b',
+            ]
+            
+            # Other non-video patterns
+            other_patterns = [
+                r'\b(AUDIOBOOK|HOERBUCH|EBOOK|EPUB|MOBI|PDF|AZW3)\b',
+                r'\b(ALBUM|DISCOGRAPHY|FLAC|320KBPS|MP3|M4A|AAC)\b',
+                r'\b(UDEMY|TUTORIAL|COURSE|TRAINING|LYNDA)\b',
+                r'\b(XXX|PORN|ADULT|18\+)\b',
+            ]
+            
+            # Check all patterns
+            all_non_video_patterns = software_patterns + game_patterns + other_patterns
+            for pattern in all_non_video_patterns:
+                if re.search(pattern, name_upper):
+                    print(f"  ✗ Detected as non-video content (matched: {pattern})")
+                    return 'other'
+            
             api_key = self.config.get('tmdb_api_key', '')
             if not api_key:
-                print("  TMDB API key not configured, skipping media detection")
                 return 'unknown'
             
             # Check if year is present in original name
-            import re
             year_match = re.search(r'\b(19\d{2}|20\d{2})\b', name)
             has_year = year_match is not None
             year = year_match.group(1) if year_match else None
@@ -326,23 +372,118 @@ class Downloader:
             import urllib.parse
             import json
             
+            # Helper function to calculate name similarity score
+            def calculate_similarity(search_term, result_name):
+                """Calculate how similar the search term is to the result name"""
+                search_lower = search_term.lower().strip()
+                result_lower = result_name.lower().strip()
+                
+                # Exact match is best
+                if search_lower == result_lower:
+                    return 100
+                
+                # Check if result starts with search term
+                if result_lower.startswith(search_lower):
+                    return 90
+                
+                # Check if all words from search are in result (in order)
+                search_words = search_lower.split()
+                result_words = result_lower.split()
+                
+                if all(word in result_words for word in search_words):
+                    # Calculate how many extra words are in the result
+                    extra_words = len(result_words) - len(search_words)
+                    return max(50, 80 - (extra_words * 5))
+                
+                # Check if some words match
+                matching_words = sum(1 for word in search_words if word in result_lower)
+                if matching_words > 0:
+                    return (matching_words / len(search_words)) * 50
+                
+                return 0
+            
+            # Helper function to try progressively shorter search terms
+            def try_search_variations(search_func, base_name, **kwargs):
+                """Try searching with progressively shorter terms if initial search fails"""
+                words = base_name.split()
+                
+                # Try full name first
+                results = search_func(base_name, **kwargs)
+                if results:
+                    # Find best matching result based on similarity
+                    best_match = None
+                    best_score = 0
+                    
+                    for result in results[:5]:  # Check top 5 results
+                        name = result.get('name') or result.get('title', '')
+                        similarity = calculate_similarity(base_name, name)
+                        
+                        # Combine similarity with popularity (if available)
+                        popularity = result.get('popularity', 0)
+                        combined_score = similarity + (popularity * 0.1)  # Slight popularity boost
+                        
+                        if combined_score > best_score:
+                            best_score = combined_score
+                            best_match = result
+                    
+                    # Only accept if similarity is reasonable (>30)
+                    if best_match and calculate_similarity(base_name, best_match.get('name') or best_match.get('title', '')) > 30:
+                        return best_match
+                
+                # If no results and name has multiple words, try progressively shorter versions
+                if len(words) > 1:
+                    # Try removing words from the end
+                    for i in range(len(words) - 1, 0, -1):
+                        shorter_name = ' '.join(words[:i])
+                        if len(shorter_name) >= 3:  # Minimum 3 characters
+                            print(f"  Trying shorter search: '{shorter_name}'")
+                            results = search_func(shorter_name, **kwargs)
+                            if results:
+                                # Again, find best match
+                                best_match = None
+                                best_score = 0
+                                
+                                for result in results[:5]:
+                                    name = result.get('name') or result.get('title', '')
+                                    similarity = calculate_similarity(shorter_name, name)
+                                    popularity = result.get('popularity', 0)
+                                    combined_score = similarity + (popularity * 0.1)
+                                    
+                                    if combined_score > best_score:
+                                        best_score = combined_score
+                                        best_match = result
+                                
+                                if best_match and calculate_similarity(shorter_name, best_match.get('name') or best_match.get('title', '')) > 30:
+                                    return best_match
+                
+                return None
+            
             # Prioritize TV series search if season/episode markers are present
             if is_tv_series:
-                # Try TV series search first
-                search_url = f"https://api.themoviedb.org/3/search/tv?query={urllib.parse.quote(clean_name)}&language=de"
-                if year:
-                    search_url += f"&first_air_date_year={year}"
+                # Define TV search function
+                def search_tv(query, year_param=None):
+                    search_url = f"https://api.themoviedb.org/3/search/tv?query={urllib.parse.quote(query)}&language=de"
+                    if year_param:
+                        search_url += f"&first_air_date_year={year_param}"
+                    
+                    try:
+                        request = urllib.request.Request(search_url)
+                        request.add_header('Authorization', f'Bearer {api_key}')
+                        request.add_header('accept', 'application/json')
+                        
+                        response = urllib.request.urlopen(request, timeout=10)
+                        data = json.loads(response.read().decode('utf-8'))
+                        
+                        if data.get('results') and len(data['results']) > 0:
+                            return data['results']  # Return all results, not just first
+                    except Exception as e:
+                        print(f"    TV search error: {e}")
+                    return None
                 
-                try:
-                    request = urllib.request.Request(search_url)
-                    request.add_header('Authorization', f'Bearer {api_key}')
-                    request.add_header('accept', 'application/json')
-                    
-                    response = urllib.request.urlopen(request, timeout=10)
-                    data = json.loads(response.read().decode('utf-8'))
-                    
-                    if data.get('results') and len(data['results']) > 0:
-                        tv_result = data['results'][0]
+                # Try TV series search with variations
+                tv_result = try_search_variations(search_tv, clean_name, year_param=year)
+                
+                if tv_result:
                         tv_id = tv_result.get('id')
                         tv_year = tv_result.get('first_air_date', '')[:4] if tv_result.get('first_air_date') else ''
                         print(f"    ✓ Found TV Series: {tv_result.get('name', 'Unknown')} ({tv_year})")
@@ -359,6 +500,7 @@ class Downloader:
                             seasons = detail_data.get('number_of_seasons', 0)
                             episodes = detail_data.get('number_of_episodes', 0)
                             series_name = detail_data.get('name', tv_result.get('name', 'Unknown'))
+                            poster_path = detail_data.get('poster_path')
                             print(f"      Staffeln: {seasons}, Episoden: {episodes}")
                             
                             return {
@@ -366,23 +508,61 @@ class Downloader:
                                 'seasons': seasons,
                                 'episodes': episodes,
                                 'name': series_name,
-                                'year': tv_year
+                                'year': tv_year,
+                                'tmdb_id': tv_id,
+                                'poster_path': poster_path
                             }
                         except Exception as e:
                             print(f"      Details error: {e}")
-                            return {'type': 'tv', 'name': tv_result.get('name', 'Unknown'), 'year': tv_year}
-                except Exception as e:
-                    print(f"    TV search error: {e}")
+                            poster_path = tv_result.get('poster_path')
+                            return {'type': 'tv', 'name': tv_result.get('name', 'Unknown'), 'year': tv_year, 'tmdb_id': tv_id, 'poster_path': poster_path}
             
             # If year found in filename and not a TV series, prioritize movie search
             elif has_year:
-                # Try movie search first
-                movie_url = f"https://api.themoviedb.org/3/search/movie?query={urllib.parse.quote(clean_name)}&language=de"
-                if year:
-                    movie_url += f"&year={year}"
+                # Define movie search function
+                def search_movie(query, year_param=None):
+                    movie_url = f"https://api.themoviedb.org/3/search/movie?query={urllib.parse.quote(query)}&language=de"
+                    if year_param:
+                        movie_url += f"&year={year_param}"
+                    
+                    try:
+                        request = urllib.request.Request(movie_url)
+                        request.add_header('Authorization', f'Bearer {api_key}')
+                        request.add_header('accept', 'application/json')
+                        
+                        response = urllib.request.urlopen(request, timeout=10)
+                        data = json.loads(response.read().decode('utf-8'))
+                        
+                        if data.get('results') and len(data['results']) > 0:
+                            return data['results']  # Return all results
+                    except Exception as e:
+                        print(f"    Movie search error: {e}")
+                    return None
+                
+                # Try movie search with variations
+                movie_result = try_search_variations(search_movie, clean_name, year_param=year)
+                
+                if movie_result:
+                    movie_year = movie_result.get('release_date', '')[:4] if movie_result.get('release_date') else ''
+                    movie_id = movie_result.get('id')
+                    poster_path = movie_result.get('poster_path')
+                    rating = movie_result.get('vote_average', 0)
+                    movie_type = 'doku' if is_doku else 'movie'
+                    return {
+                        'type': movie_type,
+                        'year': movie_year,
+                        'name': movie_result.get('title', 'Unknown'),
+                        'rating': rating,
+                        'tmdb_id': movie_id,
+                        'poster_path': poster_path
+                    }
+            
+            # Try TV series search as fallback (without year filter if initial search failed)
+            def search_tv_fallback(query, year_param=None):
+                search_url = f"https://api.themoviedb.org/3/search/tv?query={urllib.parse.quote(query)}&language=de"
                 
                 try:
-                    request = urllib.request.Request(movie_url)
+                    request = urllib.request.Request(search_url)
                     request.add_header('Authorization', f'Bearer {api_key}')
                     request.add_header('accept', 'application/json')
                     
@@ -390,30 +570,14 @@ class Downloader:
                     data = json.loads(response.read().decode('utf-8'))
                     
                     if data.get('results') and len(data['results']) > 0:
-                        result = data['results'][0]
-                        movie_year = result.get('release_date', '')[:4] if result.get('release_date') else ''
-                        print(f"    ✓ Found Movie: {result.get('title', 'Unknown')} ({movie_year})")
-                        return {
-                            'type': 'movie',
-                            'year': movie_year,
-                            'name': result.get('title', 'Unknown')
-                        }
+                        return data['results']  # Return all results
                 except Exception as e:
-                    print(f"    Movie search error: {e}")
+                    print(f"    TV search error: {e}")
+                return None
             
-            # Try TV series search as fallback (without year filter if initial search failed)
-            search_url = f"https://api.themoviedb.org/3/search/tv?query={urllib.parse.quote(clean_name)}&language=de"
+            tv_result = try_search_variations(search_tv_fallback, clean_name)
             
-            try:
-                request = urllib.request.Request(search_url)
-                request.add_header('Authorization', f'Bearer {api_key}')
-                request.add_header('accept', 'application/json')
-                
-                response = urllib.request.urlopen(request, timeout=10)
-                data = json.loads(response.read().decode('utf-8'))
-                
-                if data.get('results') and len(data['results']) > 0:
-                    tv_result = data['results'][0]
+            if tv_result:
                     tv_id = tv_result.get('id')
                     tv_year = tv_result.get('first_air_date', '')[:4] if tv_result.get('first_air_date') else ''
                     print(f"    ✓ Found TV Series: {tv_result.get('name', 'Unknown')} ({tv_year})")
@@ -430,51 +594,72 @@ class Downloader:
                         seasons = detail_data.get('number_of_seasons', 0)
                         episodes = detail_data.get('number_of_episodes', 0)
                         series_name = detail_data.get('name', tv_result.get('name', 'Unknown'))
-                        print(f"      Staffeln: {seasons}, Episoden: {episodes}")
+                        rating = detail_data.get('vote_average', 0)
+                        poster_path = detail_data.get('poster_path')
+                        print(f"      Staffeln: {seasons}, Episoden: {episodes}, Rating: {rating}")
                         
                         return {
                             'type': 'tv',
                             'seasons': seasons,
                             'episodes': episodes,
                             'name': series_name,
-                            'year': tv_year
+                            'year': tv_year,
+                            'rating': rating,
+                            'tmdb_id': tv_id,
+                            'poster_path': poster_path
                         }
                     except Exception as e:
                         print(f"      Details error: {e}")
-                        return {'type': 'tv', 'name': tv_result.get('name', 'Unknown'), 'year': tv_year}
-            except Exception as e:
-                print(f"    TV search error: {e}")
+                        rating = tv_result.get('vote_average', 0)
+                        poster_path = tv_result.get('poster_path')
+                        return {'type': 'tv', 'name': tv_result.get('name', 'Unknown'), 'year': tv_year, 'rating': rating, 'tmdb_id': tv_id, 'poster_path': poster_path}
             
             # Try movie search as fallback (only if year was not in filename or not a TV series)
             if not has_year or not is_tv_series:
-                search_url = f"https://api.themoviedb.org/3/search/movie?query={urllib.parse.quote(clean_name)}&language=de"
-                if year:
-                    search_url += f"&year={year}"
-                
-                try:
-                    request = urllib.request.Request(search_url)
-                    request.add_header('Authorization', f'Bearer {api_key}')
-                    request.add_header('accept', 'application/json')
+                def search_movie_fallback(query, year_param=None):
+                    search_url = f"https://api.themoviedb.org/3/search/movie?query={urllib.parse.quote(query)}&language=de"
+                    if year_param:
+                        search_url += f"&year={year_param}"
                     
-                    response = urllib.request.urlopen(request, timeout=10)
-                    data = json.loads(response.read().decode('utf-8'))
-                    
-                    if data.get('results') and len(data['results']) > 0:
-                        movie_result = data['results'][0]
-                        release_date = movie_result.get('release_date', '')
-                        movie_year = release_date[:4] if release_date else ''
-                        movie_name = movie_result.get('title', 'Unknown')
-                        print(f"    ✓ Found Movie: {movie_name} ({movie_year})")
+                    try:
+                        request = urllib.request.Request(search_url)
+                        request.add_header('Authorization', f'Bearer {api_key}')
+                        request.add_header('accept', 'application/json')
                         
-                        return {
-                            'type': 'movie',
-                            'year': movie_year,
-                            'name': movie_name
-                        }
-                except Exception as e:
-                    print(f"    Movie search error: {e}")
+                        response = urllib.request.urlopen(request, timeout=10)
+                        data = json.loads(response.read().decode('utf-8'))
+                        
+                        if data.get('results') and len(data['results']) > 0:
+                            return data['results']  # Return all results
+                    except Exception as e:
+                        print(f"    Movie search error: {e}")
+                    return None
+                
+                movie_result = try_search_variations(search_movie_fallback, clean_name, year_param=year)
+                
+                if movie_result:
+                    release_date = movie_result.get('release_date', '')
+                    movie_year = release_date[:4] if release_date else ''
+                    movie_name = movie_result.get('title', 'Unknown')
+                    movie_id = movie_result.get('id')
+                    rating = movie_result.get('vote_average', 0)
+                    poster_path = movie_result.get('poster_path')
+                    movie_type = 'doku' if is_doku else 'movie'
+                    print(f"    ✓ Found Movie: {movie_name} ({movie_year}), Rating: {rating}")
+                    
+                    return {
+                        'type': movie_type,
+                        'year': movie_year,
+                        'name': movie_name,
+                        'rating': rating,
+                        'tmdb_id': movie_id,
+                        'poster_path': poster_path
+                    }
             
             print("  ⚠ No TMDB match found")
+            # If no TMDB match but doku tag found, return doku type
+            if is_doku:
+                return {'type': 'doku', 'name': name}
             return 'unknown'
             
         except Exception as e:
@@ -545,7 +730,7 @@ class Downloader:
                 
             result = self.aes128cbc_decrypt(password, encrypted_value)
             if result:
-                print(f"    Testing '{password}' -> '{result[:30]}...'")
+                print(f"    Testing '{password}' -> '{result[:50]}...'")
                 sys.stdout.flush()
                 # Check if result looks valid (contains printable characters)
                 try:
@@ -560,8 +745,9 @@ class Downloader:
                         print(f"    ✓ Password '{password}' works!")
                         sys.stdout.flush()
                         return password  # Return the PASSWORD, not the result
-                except:
+                except Exception as e:
                     pass
+                sys.stdout.flush()
         
         print(f"    ✗ None of the passwords worked")
         sys.stdout.flush()
@@ -571,8 +757,8 @@ class Downloader:
         """Load configuration from .env file"""
         config = {
             'files': '',
-            'downloads': '',
-            'max_threads': 3,
+            'downloads': None,  # Will be set to MEDIA_DIR if not explicitly configured
+            'max_threads': 6,
             'extract_archives': True,
             'remove_archives': True,
             'tmdb_api_key': ''
@@ -582,6 +768,8 @@ class Downloader:
             env_path = os.path.join(os.path.dirname(self.config_path), '.env')
             script_dir = os.path.dirname(os.path.abspath(__file__))
             
+            # First pass: read all values
+            env_values = {}
             with open(env_path, 'r') as f:
                 for line in f:
                     line = line.strip()
@@ -591,24 +779,54 @@ class Downloader:
                     key, value = line.split('=', 1)
                     key = key.strip()
                     value = value.strip().strip('"').strip("'")
-                    
-                    # Replace $pwd with script directory
-                    value = value.replace('$pwd', script_dir)
-                    
-                    if key == 'FILES_DIR':
-                        config['files'] = value
-                    elif key == 'DOWNLOADS_DIR':
-                        config['downloads'] = value
-                    elif key == 'MAX_THREADS':
-                        config['max_threads'] = int(value)
-                    elif key == 'EXTRACT_ARCHIVES':
-                        config['extract_archives'] = value.lower() == 'true'
-                    elif key == 'REMOVE_ARCHIVES':
-                        config['remove_archives'] = value.lower() == 'true'
-                    elif key == 'TMDB_API_KEY':
-                        config['tmdb_api_key'] = value
+                    env_values[key] = value
+            
+            # Second pass: replace variables and set config
+            for key, value in env_values.items():
+                # Replace $pwd with script directory
+                value = value.replace('$pwd', script_dir)
+                
+                # Replace other environment variables (e.g., $MEDIA_DIR)
+                for env_key, env_val in env_values.items():
+                    placeholder = f'${env_key}'
+                    if placeholder in value and env_key != key:  # Avoid self-reference
+                        # Recursively replace
+                        resolved_val = env_val.replace('$pwd', script_dir)
+                        value = value.replace(placeholder, resolved_val)
+                
+                if key == 'UPLOAD_DIR':
+                    config['files'] = value
+                elif key == 'FILES_DIR' and 'files' not in config:  # Legacy support, only if UPLOAD_DIR not set
+                    config['files'] = value
+                elif key == 'DOWNLOADS_DIR':
+                    config['downloads'] = value
+                elif key == 'MEDIA_DIR':
+                    config['media_dir'] = value
+                elif key == 'SERIEN_DIR':
+                    config['serien_dir'] = value
+                elif key == 'MOVIES_DIR':
+                    config['movies_dir'] = value
+                elif key == 'DOKU_DIR':
+                    config['doku_dir'] = value
+                elif key == 'MAX_THREADS':
+                    config['max_threads'] = int(value)
+                elif key == 'EXTRACT_ARCHIVES':
+                    config['extract_archives'] = value.lower() == 'true'
+                elif key == 'REMOVE_ARCHIVES':
+                    config['remove_archives'] = value.lower() == 'true'
+                elif key == 'TMDB_API_KEY':
+                    config['tmdb_api_key'] = value
         except Exception as e:
             print(f"Error loading config: {e}")
+        
+        # If downloads directory not set, use MEDIA_DIR as default
+        if not config['downloads'] and config.get('media_dir'):
+            config['downloads'] = config['media_dir']
+            print(f"Using MEDIA_DIR as downloads directory: {config['downloads']}")
+        elif not config['downloads']:
+            # Ultimate fallback to current directory
+            config['downloads'] = os.path.join(os.path.dirname(self.config_path), 'downloads')
+            print(f"Warning: Using fallback downloads directory: {config['downloads']}")
         
         return config
     
@@ -856,7 +1074,6 @@ class Downloader:
             if max_threads and max_threads.isdigit():
                 info['max_threads'] = int(max_threads)
             
-            # Debug: Print what we found so far
             name_preview = info['name'][:50] + '...' if len(info['name']) > 50 else info['name']
             print(f"SFDL Info: name={name_preview}, host={info['host']}, port={info['port']}")
             print(f"Auth: user={info['username']}, auth_required={info['auth_required']}, encrypted={info['encrypted']}")
@@ -923,9 +1140,7 @@ class Downloader:
             if info['encrypted'] and working_password:
                 print(f"Extracting files (encrypted with {working_password})...")
             
-            # Debug: Show what tags exist in the SFDL
-            print(f"\nDebug: Searching for file/package tags...")
-            print(f"  Content length: {len(content)} bytes")
+            print(f"\n  Content length: {len(content)} bytes")
             if '<BulkFolderPath' in content:
                 print(f"  Found BulkFolderPath tag in content")
             if '<Package' in content:
@@ -1018,7 +1233,6 @@ class Downloader:
             
             print(f"Successfully parsed {len(info['files'])} files from SFDL using regex method")
             
-            # Debug: Print first few files
             for i, f in enumerate(info['files'][:3]):
                 print(f"  File {i+1}: {f['name']} ({f['size']} bytes) at {f['path']}")
             
@@ -1082,7 +1296,7 @@ class Downloader:
         try:
             status_data = {
                 'data': [{
-                    'version': '1.0',
+                    'version': '2.0',
                     'date': datetime.now().strftime('%Y-%m-%d'),
                     'datetime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'status': status,
@@ -1213,13 +1427,24 @@ class Downloader:
                     'lftp',
                     '-p', str(sfdl_info['port']),
                     '-u', f"{sfdl_info['username']},{sfdl_info['password']}",
+                    sfdl_info['host'],
                     '-e',
-                    f"set ftp:use-feat no; set ssl:verify-certificate no; set net:timeout 30; set net:reconnect-interval-base 5; set net:max-retries 2; set ftp:ssl-allow no; open && find -l '{bulk_path}' && exit",
-                    sfdl_info['host']
+                    f"set ftp:use-feat no; set ssl:verify-certificate no; set net:timeout 30; set net:reconnect-interval-base 5; set net:max-retries 2; set ftp:ssl-allow no; find -l '{bulk_path}'; exit"
                 ]
                 
                 try:
                     index_result = subprocess.run(index_cmd, capture_output=True, text=True, timeout=60)
+                    
+                    # Debug output
+                    print(f"  lftp return code: {index_result.returncode}")
+                    print(f"  stdout length: {len(index_result.stdout) if index_result.stdout else 0}")
+                    print(f"  stderr length: {len(index_result.stderr) if index_result.stderr else 0}")
+                    if index_result.stderr:
+                        print(f"  stderr: {index_result.stderr[:200]}")
+                    if index_result.stdout:
+                        print(f"  stdout preview: {index_result.stdout[:500]}")
+                    sys.stdout.flush()
+                    
                     if index_result.returncode == 0 and index_result.stdout:
                         # Parse index to get file sizes
                         total_size = 0
@@ -1227,31 +1452,65 @@ class Downloader:
                         expected_files = {}  # filename -> expected size
                         
                         for line in index_result.stdout.splitlines():
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
                             # Skip directories (lines starting with 'd')
                             if line.startswith('d'):
                                 continue
-                            # Extract file size and name
-                            parts = line.split()
-                            if len(parts) >= 3:
+                            
+                            # Parse lftp find -l output format:
+                            # Can be either:
+                            # -rw-r--r--               17292980 2025-10-04 23:06:30 /full/path/file.ext
+                            # -rw-r--r--  1000/seedit4me 2095240528 2025-12-19 06:28:30 /full/path/file.ext
+                            # Format: permissions [user/group] size date time filepath
+                            
+                            # Try to determine format by checking if second field is a number (size) or user/group
+                            parts = line.split(None, 5)  # Split on whitespace, max 6 parts
+                            
+                            if len(parts) >= 5:
                                 try:
-                                    size = int(parts[2])
+                                    # Check if parts[1] is a number (size) or user/group
+                                    try:
+                                        size = int(parts[1])
+                                        # Format without user/group: permissions size date time filepath
+                                        filepath_index = 4
+                                    except ValueError:
+                                        # Format with user/group: permissions user/group size date time filepath
+                                        if len(parts) >= 6:
+                                            size = int(parts[2])
+                                            filepath_index = 5
+                                        else:
+                                            continue
+                                    
                                     if size > 0:
-                                        # Get filename (last part of line)
-                                        filename = parts[-1].split('/')[-1]
-                                        expected_files[filename] = size
-                                        total_size += size
-                                        file_count += 1
-                                except ValueError:
+                                        filename = parts[filepath_index].split('/')[-1]
+                                        
+                                        # Skip Sample files and hidden files
+                                        if filename and not filename.startswith('.') and 'Sample' not in parts[filepath_index]:
+                                            expected_files[filename] = size
+                                            total_size += size
+                                            file_count += 1
+                                            print(f"    Found: {filename} ({size / 1024 / 1024:.2f} MB)")
+                                except (ValueError, IndexError) as e:
+                                    # Debug: Print line that failed to parse
+                                    print(f"    Parse error on line: {line[:100]}")
                                     pass
                         
                         # Set real totals
-                        self.total_bytes = total_size
-                        self.total_files = file_count
-                        print(f"  Found {file_count} file(s), total size: {total_size / 1024 / 1024:.2f} MB")
+                        if total_size > 0:
+                            self.total_bytes = total_size
+                            self.total_files = file_count
+                            print(f"  Found {file_count} file(s), total size: {total_size / 1024 / 1024:.2f} MB")
+                        else:
+                            # No files found - don't set totals, let monitor_progress detect them
+                            expected_files = {}
+                            print(f"  Found 0 file(s) in index, will detect during download")
                         sys.stdout.flush()
                     else:
                         expected_files = {}
-                        print(f"  Warning: Could not load index, using placeholder values")
+                        print(f"  Warning: Could not load index, will detect during download")
                         sys.stdout.flush()
                 except subprocess.TimeoutExpired:
                     expected_files = {}
@@ -1282,15 +1541,51 @@ class Downloader:
                 process = subprocess.Popen(lftp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 
                 # Monitor download progress in separate thread
+                previous_file_sizes = {}  # Track file sizes to detect when downloads complete
+                download_start_time = time.time()  # Track when download started
+                
                 def monitor_progress():
+                    nonlocal previous_file_sizes
                     while process.poll() is None:
                         try:
                             # Calculate downloaded size and count files
                             total_size = 0
                             file_list = []
                             
+                            # First, check for lftp temp files to see what's actively downloading
+                            actively_downloading = set()
                             for root, dirs, files in os.walk(download_dir):
                                 for file in files:
+                                    # lftp creates .lftp-pget-status files for files being downloaded
+                                    if file.endswith('.lftp-pget-status'):
+                                        # Extract the original filename
+                                        original_name = file.replace('.lftp-pget-status', '')
+                                        actively_downloading.add(original_name)
+                            
+                            for root, dirs, files in os.walk(download_dir):
+                                for file in files:
+                                    # Skip lftp temporary files
+                                    if file.endswith('.lftp-pget-status'):
+                                        continue
+                                    
+                                    # Skip files that don't belong to this download:
+                                    # 1. If we have expected_files list, only include files in that list
+                                    # 2. If no expected_files, only include files created after download started
+                                    if expected_files:
+                                        # We have an index - only count expected files
+                                        if file not in expected_files:
+                                            continue
+                                    else:
+                                        # No index - only count files created after download started
+                                        file_path = os.path.join(root, file)
+                                        if os.path.exists(file_path):
+                                            file_mtime = os.path.getmtime(file_path)
+                                            if file_mtime < download_start_time:
+                                                # File existed before download started - skip it
+                                                continue
+                                        else:
+                                            continue
+                                        
                                     file_path = os.path.join(root, file)
                                     if os.path.exists(file_path):
                                         file_size = os.path.getsize(file_path)
@@ -1298,22 +1593,65 @@ class Downloader:
                                         file_list.append({
                                             'name': file,
                                             'path': file_path,
-                                            'size': file_size
+                                            'size': file_size,
+                                            'is_downloading': file in actively_downloading
                                         })
                             
                             # Update downloaded bytes
                             self.downloaded_bytes = total_size
                             
+                            # If total_bytes wasn't set from index (was 0), set it from actual files
+                            if self.total_bytes == 0 and total_size > 0:
+                                # Estimate total based on current files
+                                self.total_bytes = total_size * 1.1  # Add 10% buffer for remaining files
+                                self.total_files = len(file_list)
+                            
                             # Build current files list with expected sizes
                             self.current_files = []
                             for file_info in file_list:
-                                # Get expected size from index
-                                expected_size = expected_files.get(file_info['name'], file_info['size'])
+                                filename = file_info['name']
+                                current_size = file_info['size']
+                                is_downloading = file_info.get('is_downloading', False)
                                 
+                                # Get expected size from index
+                                if filename in expected_files:
+                                    # We have index info - use it
+                                    expected_size = expected_files[filename]
+                                    downloaded = current_size
+                                else:
+                                    # No index info - need to estimate
+                                    prev_size = previous_file_sizes.get(filename, 0)
+                                    
+                                    if is_downloading:
+                                        # File has active lftp status file - still downloading
+                                        # Estimate final size as much larger
+                                        expected_size = current_size * 3  # Assume file will be 3x current size
+                                        downloaded = current_size
+                                    elif prev_size > 0 and current_size > prev_size:
+                                        # File is growing - still downloading
+                                        # Calculate growth rate and estimate
+                                        growth = current_size - prev_size
+                                        # Estimate it will grow at least 10 more iterations at same rate
+                                        expected_size = current_size + (growth * 10)
+                                        downloaded = current_size
+                                    elif prev_size > 0 and current_size == prev_size:
+                                        # File stopped growing - assume complete
+                                        expected_size = current_size
+                                        downloaded = current_size
+                                    else:
+                                        # First time seeing this file - can't tell yet
+                                        # Mark as 0% until next iteration
+                                        expected_size = current_size * 100  # Assume it's just 1% complete
+                                        downloaded = current_size
+                                
+                                # Track current size for next iteration
+                                previous_file_sizes[filename] = current_size
+                                
+                                # Add to current files
                                 self.current_files.append({
-                                    'name': file_info['name'],
-                                    'size': expected_size,  # Expected size from index
-                                    'downloaded': file_info['size']  # Current downloaded size
+                                    'name': filename,
+                                    'size': expected_size,
+                                    'downloaded': downloaded
                                 })
                             
                             # Update status with current size
@@ -1340,13 +1678,54 @@ class Downloader:
                 
                 if returncode == 0:
                     print(f"\n  ✓ Successfully downloaded {bulk_path}")
+                    
+                    # Calculate actual final size from downloaded files
+                    actual_total_size = 0
+                    final_file_list = []
+                    for root, dirs, files in os.walk(download_dir):
+                        for file in files:
+                            # Skip lftp temporary files
+                            if file.endswith('.lftp-pget-status'):
+                                continue
+                            
+                            # Apply same filter as monitor_progress
+                            if expected_files:
+                                if file not in expected_files:
+                                    continue
+                            else:
+                                file_path = os.path.join(root, file)
+                                if os.path.exists(file_path):
+                                    file_mtime = os.path.getmtime(file_path)
+                                    if file_mtime < download_start_time:
+                                        continue
+                                else:
+                                    continue
+                            
+                            file_path = os.path.join(root, file)
+                            if os.path.exists(file_path):
+                                file_size = os.path.getsize(file_path)
+                                actual_total_size += file_size
+                                final_file_list.append({
+                                    'name': file,
+                                    'size': file_size,
+                                    'downloaded': file_size  # 100% complete
+                                })
+                    
+                    # Update with actual final size (100%)
+                    self.total_bytes = actual_total_size
+                    self.downloaded_bytes = actual_total_size
+                    self.current_files = final_file_list
+                    
+                    # Send final status update
+                    self.update_status(
+                        status='running',
+                        action='loading',
+                        sfdl_name=sfdl_info['name']
+                    )
                 else:
                     print(f"\n  ✗ Error downloading {bulk_path} (exit code: {returncode})")
                 
                 sys.stdout.flush()
-            
-            # Final update: Set downloaded to total (100%)
-            self.downloaded_bytes = self.total_bytes
             
             # Detect media type using TMDB
             print(f"\n  Detecting media type...")
@@ -1376,8 +1755,8 @@ class Downloader:
             
             # Move to appropriate folder based on media type
             if media_type == 'movie':
-                # For movies: Find .mkv file and move it directly to /movies with proper name
-                final_dir = os.path.join(self.config['downloads'], 'movies')
+                # For movies: Find .mkv file and move it directly to MOVIES_DIR with proper name
+                final_dir = self.config.get('movies_dir', os.path.join(self.config['downloads'], 'movies'))
                 os.makedirs(final_dir, exist_ok=True)
                 import shutil
                 
@@ -1416,17 +1795,22 @@ class Downloader:
                     
             elif media_type == 'tv':
                 # For TV series: Organize by series name and season folders
-                final_dir = os.path.join(self.config['downloads'], 'serien')
+                final_dir = self.config.get('serien_dir', os.path.join(self.config['downloads'], 'serien'))
                 os.makedirs(final_dir, exist_ok=True)
                 import shutil
                 import re
                 
-                # Get series name from TMDB
+                # Get series name and year from TMDB
                 series_name = media_info.get('name', 'Unknown Series')
-                series_folder = os.path.join(final_dir, series_name)
+                series_year = media_info.get('year', '')
+                
+                # Use series name without year for folder
+                series_folder_name = series_name
+                
+                series_folder = os.path.join(final_dir, series_folder_name)
                 os.makedirs(series_folder, exist_ok=True)
                 
-                print(f"\n  Organizing series: {series_name}")
+                print(f"\n  Organizing series: {series_folder_name}")
                 
                 # Find all .mkv files and organize by season
                 season_files = {}
@@ -1468,6 +1852,45 @@ class Downloader:
                     print(f"  ✓ Cleaned up download directory")
                 except Exception as e:
                     print(f"  ⚠ Failed to remove download directory: {e}")
+                    
+            elif media_type == 'doku':
+                # For documentaries: Find .mkv file and move it directly to DOKU_DIR with proper name
+                final_dir = self.config.get('doku_dir', os.path.join(self.config['downloads'], 'docus'))
+                os.makedirs(final_dir, exist_ok=True)
+                import shutil
+                
+                # Find .mkv file recursively
+                mkv_file = None
+                for root, dirs, files in os.walk(download_dir):
+                    for filename in files:
+                        if filename.lower().endswith('.mkv'):
+                            mkv_file = os.path.join(root, filename)
+                            break
+                    if mkv_file:
+                        break
+                
+                if mkv_file:
+                    # Use SFDL name or folder name for the documentary file
+                    folder_name = os.path.basename(download_dir)
+                    doku_filename = folder_name + '.mkv'
+                    destination = os.path.join(final_dir, doku_filename)
+                    
+                    print(f"\n  Moving documentary to: {final_dir}")
+                    # Remove destination if exists
+                    if os.path.exists(destination):
+                        os.remove(destination)
+                    
+                    shutil.move(mkv_file, destination)
+                    print(f"  ✓ Moved documentary to: {destination}")
+                    
+                    # Remove download directory after moving the documentary
+                    try:
+                        shutil.rmtree(download_dir)
+                        print(f"  ✓ Cleaned up download directory")
+                    except Exception as e:
+                        print(f"  ⚠ Failed to remove download directory: {e}")
+                else:
+                    print(f"  ⚠ No .mkv file found in {download_dir}")
                     
             else:
                 # Unknown type: keep in downloads folder
@@ -1637,8 +2060,8 @@ class Downloader:
             
             # Move to appropriate folder based on media type
             if media_type == 'movie':
-                # For movies: Find .mkv file and move it directly to /movies with proper name
-                final_dir = os.path.join(self.config['downloads'], 'movies')
+                # For movies: Find .mkv file and move it directly to MOVIES_DIR with proper name
+                final_dir = self.config.get('movies_dir', os.path.join(self.config['downloads'], 'movies'))
                 os.makedirs(final_dir, exist_ok=True)
                 import shutil
                 
@@ -1677,17 +2100,22 @@ class Downloader:
                     
             elif media_type == 'tv':
                 # For TV series: Organize by series name and season folders
-                final_dir = os.path.join(self.config['downloads'], 'serien')
+                final_dir = self.config.get('serien_dir', os.path.join(self.config['downloads'], 'serien'))
                 os.makedirs(final_dir, exist_ok=True)
                 import shutil
                 import re
                 
-                # Get series name from TMDB
+                # Get series name and year from TMDB
                 series_name = media_info.get('name', 'Unknown Series')
-                series_folder = os.path.join(final_dir, series_name)
+                series_year = media_info.get('year', '')
+                
+                # Use series name without year for folder
+                series_folder_name = series_name
+                
+                series_folder = os.path.join(final_dir, series_folder_name)
                 os.makedirs(series_folder, exist_ok=True)
                 
-                print(f"\n  Organizing series: {series_name}")
+                print(f"\n  Organizing series: {series_folder_name}")
                 
                 # Find all .mkv files and organize by season
                 season_files = {}
@@ -1729,6 +2157,45 @@ class Downloader:
                     print(f"  ✓ Cleaned up download directory")
                 except Exception as e:
                     print(f"  ⚠ Failed to remove download directory: {e}")
+                    
+            elif media_type == 'doku':
+                # For documentaries: Find .mkv file and move it directly to DOKU_DIR with proper name
+                final_dir = self.config.get('doku_dir', os.path.join(self.config['downloads'], 'docus'))
+                os.makedirs(final_dir, exist_ok=True)
+                import shutil
+                
+                # Find .mkv file recursively
+                mkv_file = None
+                for root, dirs, files in os.walk(download_dir):
+                    for filename in files:
+                        if filename.lower().endswith('.mkv'):
+                            mkv_file = os.path.join(root, filename)
+                            break
+                    if mkv_file:
+                        break
+                
+                if mkv_file:
+                    # Use SFDL name or folder name for the documentary file
+                    folder_name = os.path.basename(download_dir)
+                    doku_filename = folder_name + '.mkv'
+                    destination = os.path.join(final_dir, doku_filename)
+                    
+                    print(f"\n  Moving documentary to: {final_dir}")
+                    # Remove destination if exists
+                    if os.path.exists(destination):
+                        os.remove(destination)
+                    
+                    shutil.move(mkv_file, destination)
+                    print(f"  ✓ Moved documentary to: {destination}")
+                    
+                    # Remove download directory after moving the documentary
+                    try:
+                        shutil.rmtree(download_dir)
+                        print(f"  ✓ Cleaned up download directory")
+                    except Exception as e:
+                        print(f"  ⚠ Failed to remove download directory: {e}")
+                else:
+                    print(f"  ⚠ No .mkv file found in {download_dir}")
                     
             else:
                 # Unknown type: keep in downloads folder

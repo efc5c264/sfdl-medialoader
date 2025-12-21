@@ -23,7 +23,13 @@ Du lädst eine SFDL-Datei hoch, der Rest passiert automatisch:
 - Python 3.7 oder höher
 - `unrar` (für Archive)
 
-**Pakete installieren:**
+**Schnell-Installation mit Script (Linux/Mac):**
+```bash
+chmod +x start.sh       # Einmalig: Ausführbar machen
+./start.sh install      # Installiert alle Abhängigkeiten automatisch
+```
+
+**Oder manuell:**
 ```bash
 pip install pycryptodome requests
 ```
@@ -61,9 +67,10 @@ STOP_PASSWORD=stop456
 python main.py
 ```
 
-**Mit Start-Script:**
+**Mit Start-Script (Linux/Mac):**
 ```bash
 chmod +x start.sh       # Einmalig: Ausführbar machen
+./start.sh install      # Abhängigkeiten installieren
 ./start.sh start        # Server starten
 ./start.sh status       # Status prüfen
 ./start.sh logs         # Live-Logs anzeigen
@@ -102,12 +109,35 @@ Nach dem Upload:
 
 ### Was passiert jetzt?
 
-Du siehst den Fortschritt live:
+Du siehst den Fortschritt live in der **Media Bar** (unten rechts):
+
+**Einzelne Dateien:**
 ```
-Status: LÄUFT
-Aktion: Lade Dateien herunter (45/120)
-Fortschritt: ████████░░░░ 65%
+Pluribus.2025.S01E08.German.DL.Atmos.1080p.ATVP.WEB.H265-ZeroTwo
+Download läuft... • 1.95 GB                    ↓ 85.58 MB/s    47%
+
+Dateien:
+Pluribus.2025.S01E08...mkv    1.20 GB / 1.95 GB    47%
 ```
+
+**Mehrere Archive:**
+```
+Movie.Title.2024.GERMAN.1080p.BluRay.x264
+6 Archive werden geladen... • 8.42 GB         ↓ 42.15 MB/s    73%
+⏱ 00:03:24
+
+Dateien:
+movie.r00                     1.45 GB / 1.45 GB    100%
+movie.r01                     1.45 GB / 1.45 GB    100%
+movie.r02                     982 MB / 1.45 GB     68%
+movie.r03                     0 B / 1.45 GB        0%
+```
+
+**Features:**
+- Echtzeit-Fortschritt für jede einzelne Datei
+- Geschwindigkeit und verbleibende Zeit (ETA)
+- Automatische Größenerkennung (GB/MB)
+- SFDL-Dateien werden während Downloads aus der Liste ausgeblendet
 
 Wenn alles fertig ist:
 ```
@@ -179,13 +209,19 @@ Jede Zeile = ein Passwort. Das Tool probiert alle durch.
 
 ### Dashboard
 - **Live-Status:** Siehst sofort was gerade läuft
-- **Fortschrittsbalken:** Prozentuale Anzeige
-- **Dateiliste:** Alle hochgeladenen SFDLs
+- **Media Bar:** Erweiterte Download-Anzeige mit:
+  - Einzelnen Dateien und deren Fortschritt
+  - Download-Geschwindigkeit in MB/s
+  - Verbleibende Zeit (ETA) im Format HH:MM:SS
+  - Gesamtgröße und bereits heruntergeladene Bytes
+  - Automatische Erkennung von Archiv-Downloads
+- **Dateiliste:** Alle hochgeladenen SFDLs (aktive Downloads ausgeblendet)
 
 ### SFDL-Verwaltung
 - **Umbenennen:** Klick auf Namen → neuen Namen eingeben
 - **Löschen:** Klick auf Mülleimer-Icon
 - **Typ ändern:** Bei `unknown` kannst du manuell Film/Serie wählen
+- **Auto-Hide:** Downloads verschwinden automatisch aus der Liste während sie laufen
 
 ### Badges erklärt
 - **Film (2024):** Erkannter Film mit Jahr
@@ -213,6 +249,16 @@ Jede Zeile = ein Passwort. Das Tool probiert alle durch.
 - FTP-Server offline?
 - Passwort für SFDL falsch?
 - Logs anschauen: `logs/` Ordner
+
+### Download bleibt bei X% stehen
+- Das Tool schätzt die finale Größe während des Downloads
+- Bei Dateien ohne Index-Info kann es zu Abweichungen kommen
+- Am Ende wird automatisch auf 100% korrigiert
+
+### Fortschritt zeigt falsche Werte
+- Der lftp-Index unterstützt zwei Formate (mit/ohne User/Group)
+- Bei Parsing-Fehlern werden Dateien während des Downloads erkannt
+- Nur Dateien des aktuellen Downloads werden gezählt (keine vorhandenen Dateien)
 
 ---
 
@@ -272,6 +318,12 @@ A: Werden automatisch gelöscht. Samples braucht man nicht, NFOs sind meist nur 
 
 **Q: Kann ich das Interface anpassen?**  
 A: Ja! Bearbeite `static/index.html` und `static/js/status.js`
+
+**Q: Warum sehe ich meine SFDL-Datei nicht mehr?**  
+A: Während ein Download läuft, wird die SFDL automatisch aus der Liste ausgeblendet. Nach Abschluss wird sie gelöscht oder erscheint wieder.
+
+**Q: Wie genau ist die Fortschrittsanzeige?**  
+A: Bei Dateien mit Index-Info sehr genau. Ohne Index wird die Größe geschätzt anhand der Wachstumsrate. Am Ende wird immer auf die tatsächliche Größe korrigiert.
 
 ---
 

@@ -78,10 +78,18 @@ function uploadFromUrl() {
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			console.log('SFDL erfolgreich heruntergeladen: ' + data.filename);
+			console.log('SFDL Download gestartet: ' + (data.display_name || 'Download läuft im Hintergrund'));
 			document.getElementById('modal-sfdl-url').value = '';
-			loadSFDLFiles(); // Reload file list
 			closeUploadModal();
+			// Wait for background download and TMDB processing to complete
+			// Then reload the file list to show covers and metadata
+			setTimeout(() => {
+				loadSFDLFiles();
+				// Reload again after another 2 seconds to ensure TMDB data is loaded
+				setTimeout(() => {
+					loadSFDLFiles();
+				}, 2000);
+			}, 2000);
 		} else {
 			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
 		}
@@ -177,8 +185,11 @@ function uploadModalFile() {
 		if (data.success) {
 			console.log('Datei erfolgreich hochgeladen: ' + data.filename);
 			clearModalFileSelection();
-			loadSFDLFiles(); // Reload file list
 			closeUploadModal();
+			// Reload file list with TMDB data - add small delay to ensure metadata is saved
+			setTimeout(() => {
+				loadSFDLFiles();
+			}, 500);
 		} else {
 			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
 		}
@@ -224,8 +235,11 @@ function uploadModalText() {
 			console.log('SFDL erfolgreich gespeichert: ' + data.filename);
 			document.getElementById('modal-text-filename').value = '';
 			document.getElementById('modal-text-content').value = '';
-			loadSFDLFiles(); // Reload file list
 			closeUploadModal();
+			// Reload file list with TMDB data - add small delay to ensure metadata is saved
+			setTimeout(() => {
+				loadSFDLFiles();
+			}, 500);
 		} else {
 			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
 		}

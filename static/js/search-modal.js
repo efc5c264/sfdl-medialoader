@@ -24,156 +24,142 @@ function closeSearchModal() {
 	searchResults = [];
 }
 
-// Load data from APIs
+// Search data via API
 async function loadSearchData() {
-	const loadingIndicator = document.getElementById('search-loading');
-	if (loadingIndicator) {
-		loadingIndicator.classList.remove('hidden');
-	}
-	
-	try {
-		// Load series data
-		const seriesResponse = await fetch('https://seriesapi.mlc.to/series.json');
-		const seriesJson = await seriesResponse.json();
-		// Handle both array and object responses, check for "data" field
-		if (seriesJson.data) {
-			seriesData = Array.isArray(seriesJson.data) ? seriesJson.data : Object.values(seriesJson.data);
-		} else {
-			seriesData = Array.isArray(seriesJson) ? seriesJson : Object.values(seriesJson);
-		}
-		
-		// Load movies data
-		const moviesResponse = await fetch('https://seriesapi.mlc.to/movies.json');
-		const moviesJson = await moviesResponse.json();
-		// Movies are in "data" field
-		if (moviesJson.data) {
-			moviesData = Array.isArray(moviesJson.data) ? moviesJson.data : Object.values(moviesJson.data);
-		} else {
-			moviesData = Array.isArray(moviesJson) ? moviesJson : Object.values(moviesJson);
-		}
-		
-		console.log(`Loaded ${seriesData.length} series and ${moviesData.length} movies`);
-	} catch (error) {
-		console.error('Fehler beim Laden der Daten:', error);
-		showSearchError('Fehler beim Laden der Daten von der API');
-	} finally {
-		if (loadingIndicator) {
-			loadingIndicator.classList.add('hidden');
-		}
-	}
+	// No longer needed - search is now performed via API
+	console.log('Search will be performed via API on-demand');
 }
 
 // Search function
-function performSearch() {
-	const searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
+async function performSearch() {
+	const searchTerm = document.getElementById('search-input').value.trim();
 	
 	if (searchTerm.length < 2) {
 		document.getElementById('search-results').innerHTML = '<div class="text-center text-gray-400 py-8">Bitte mindestens 2 Zeichen eingeben</div>';
 		return;
 	}
 	
-	// Normalize search term: replace " s" with ".s" for season searches
-	const normalizedSearchTerm = searchTerm.replace(/\s+s(\d)/g, '.s$1');
+	// Show loading indicator
+	document.getElementById('search-results').innerHTML = '<div class="text-center text-gray-400 py-8"><div class="animate-spin inline-block w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full"></div><p class="mt-4">Suche...</p></div>';
 	
-	searchResults = [];
-	const addedSeriesKeys = new Set(); // Prevent duplicates
-	
-	// Extract season filter if present (e.g., "s02" or "s2")
-	const seasonMatch = normalizedSearchTerm.match(/s(\d{1,2})/i);
-	const seasonFilter = seasonMatch ? seasonMatch[1].padStart(2, '0') : null;
-	
-	// Search in series
-	seriesData.forEach(series => {
-		// Check if series matches search term (use both original and normalized)
-		const nameMatches = series.name && series.name.toLowerCase().includes(normalizedSearchTerm);
-		const seriesMatches = series.series && series.series.toLowerCase().includes(normalizedSearchTerm);
+	try {
+		// Perform search via new API
+		const apiUrl = `https://searchapi.mlc.to/search?&q=${encodeURIComponent(searchTerm)}`;
+		const response = await fetch(apiUrl);
 		
-		if (!nameMatches && !seriesMatches) return;
-		
-		// If season filter is present, only show matching seasons
-		if (seasonFilter && series.season && String(series.season).padStart(2, '0') !== seasonFilter) {
-			return;
+		if (!response.ok) {
+			throw new Error(`API returned status ${response.status}`);
 		}
 		
-		// Create unique key to avoid duplicates
-		const uniqueKey = `${series.series}_${series.season}_${series.episode}`;
+		const data = await response.json();
 		
-		if (!addedSeriesKeys.has(uniqueKey)) {
-			addedSeriesKeys.add(uniqueKey);
-			searchResults.push({
-				type: 'Serie',
-				name: series.name,
-				link: series.link,
-				series: series.series,
-				season: series.season,
-				episode: series.episode,
-				year: null,
-				quality: null
-			});
-		}
-	});
-	
-	// Search in movies
-	moviesData.forEach(movie => {
-		if (movie.name && typeof movie.name === 'string' && movie.name.toLowerCase().includes(searchTerm)) {
-			// Add each upload as a separate result
-			if (movie.uploads && movie.uploads.length > 0) {
-				movie.uploads.forEach(upload => {
+		// Transform API response to our format
+		searchResults = [];
+		
+		if (data && data.results && Array.isArray(data.results)) {
+			data.results.forEach(item => {
+				const title = item.title || '';
+				const link = `http://mlcboard.com/forum/showthread.php?t=${item.id}`;
+				
+				// Check if it's a series (contains S01, S02, etc. or S01E01 patterns)
+				const seasonMatch = title.match(/S(\d{1,2})(E(\d{1,2}))?/i);
+				const yearMatch = title.match(/\b(19|20)\d{2}\b/);
+				
+				// Check for software/non-video indicators
+				const titleUpper = title.toUpperCase();
+				const softwarePatterns = [
+					/\b(WISO|ADOBE|MICROSOFT|OFFICE|WINDOWS|MACOS|LINUX)\b/,
+					/\b(PHOTOSHOP|ILLUSTRATOR|PREMIERE|INDESIGN|SPARBUCH|STEUER)\b/,
+					/\b(ANTIVIRUS|KASPERSKY|NORTON|MCAFEE|VMWARE|DOCKER)\b/,
+					/\b(AUTOCAD|SOLIDWORKS|CATIA|REVIT|SKETCHUP)\b/,
+					/\b(V\d+\.\d+|BUILD\.\d+|VERSION\.\d+)\b/,
+					/\b(REPACK|CODEX|SKIDROW|PLAZA|GOG|STEAM|CRACK|KEYGEN)\b/,
+					/\b(AUDIOBOOK|HOERBUCH|EBOOK|EPUB|MOBI|PDF)\b/,
+					/\b(ALBUM|DISCOGRAPHY|FLAC|320KBPS|MP3)\b/
+				];
+				
+				const isSoftware = softwarePatterns.some(pattern => pattern.test(titleUpper));
+				
+				if (isSoftware) {
+					// Skip software, games, ebooks, music
+					return;
+				} else if (seasonMatch) {
+					// It's a series
+					const season = seasonMatch[1].padStart(2, '0');
+					const episode = seasonMatch[3] ? seasonMatch[3].padStart(2, '0') : null;
+					
+					// Extract series name (everything before season marker)
+					const seriesName = title.split(/\.S\d{1,2}/i)[0].replace(/\./g, ' ').trim();
+					
+					searchResults.push({
+						type: 'Serie',
+						name: title,
+						link: link,
+						series: seriesName,
+						season: season,
+						episode: episode,
+						year: yearMatch ? yearMatch[0] : null,
+						quality: null,
+						uploadTitle: title
+					});
+				} else {
+					// It's a movie
+					// Extract movie name (remove quality indicators, year, etc.)
+					const cleanName = title.split(/\.(19|20)\d{2}\./)[0].replace(/\./g, ' ').trim();
+					
 					searchResults.push({
 						type: 'Film',
-						name: movie.name,
-						link: `http://mlcboard.com/forum/showthread.php?t=${upload.tid}`,
+						name: cleanName,
+						link: link,
 						series: null,
 						season: null,
 						episode: null,
-						year: movie.year,
-						quality: movie.quality && movie.quality.length > 0 ? movie.quality.join(', ') : 'N/A',
-						uploadTitle: upload.title
+						year: yearMatch ? yearMatch[0] : null,
+						quality: 'N/A',
+						uploadTitle: title
 					});
-				});
-			} else {
-				searchResults.push({
-					type: 'Film',
-					name: movie.name,
-					link: null,
-					series: null,
-					season: null,
-					episode: null,
-					year: movie.year,
-					quality: movie.quality && movie.quality.length > 0 ? movie.quality.join(', ') : 'N/A'
-				});
-			}
+				}
+			});
 		}
-	});
-	
-	// Sort results: Series by season/episode, Movies by year
-	searchResults.sort((a, b) => {
-		if (a.type === 'Serie' && b.type === 'Serie') {
-			if (a.season !== b.season) return (a.season || 0) - (b.season || 0);
-			return (a.episode || 0) - (b.episode || 0);
-		}
-		if (a.type === 'Film' && b.type === 'Film') {
-			return (b.year || 0) - (a.year || 0);
-		}
-		return a.type === 'Serie' ? -1 : 1; // Series first
-	});
-	
-	displaySearchResults();
+		
+		console.log(`Search returned ${searchResults.length} results`);
+		displaySearchResults();
+		
+	} catch (error) {
+		console.error('Search error:', error);
+		showSearchError(`Fehler bei der Suche: ${error.message}`);
+	}
 }
 
 // Display search results
 function displaySearchResults() {
 	const resultsContainer = document.getElementById('search-results');
 	
-	if (searchResults.length === 0) {
+	// Filter out results without tags (likely not movies/series) and music files
+	const filteredResults = searchResults.filter(result => {
+		const nameForTags = result.uploadTitle || result.name;
+		const upperTitle = nameForTags.toUpperCase();
+		
+		// Exclude music files (FLAC, MP3, AAC, etc.)
+		if (upperTitle.includes('FLAC') || upperTitle.includes('.FLAC.') || 
+		    upperTitle.includes('MP3') || upperTitle.includes('.MP3.') ||
+		    upperTitle.includes('ALBUM') || upperTitle.includes('.ALBUM.')) {
+			return false;
+		}
+		
+		const tags = extractReleaseTags(nameForTags);
+		return tags.length > 0; // Only include results with at least one tag
+	});
+	
+	if (filteredResults.length === 0) {
 		resultsContainer.innerHTML = '<div class="text-center text-gray-400 py-8">Keine Ergebnisse gefunden</div>';
 		return;
 	}
 	
-	let html = `<div class="text-sm text-gray-400 mb-4">${searchResults.length} Ergebnis${searchResults.length !== 1 ? 'se' : ''} gefunden</div>`;
+	let html = `<div class="text-sm text-gray-400 mb-4">${filteredResults.length} Ergebnis${filteredResults.length !== 1 ? 'se' : ''} gefunden</div>`;
 	html += '<div class="space-y-3">';
 	
-	searchResults.forEach((result, index) => {
+	filteredResults.forEach((result, index) => {
 		// For movies, use uploadTitle for tag extraction as it contains full release info
 		const nameForTags = result.uploadTitle || result.name;
 		const tags = extractReleaseTags(nameForTags);
@@ -184,6 +170,14 @@ function displaySearchResults() {
 			? `S${String(result.season).padStart(2, '0')}E${String(result.episode).padStart(2, '0')}` 
 			: '';
 		
+		// Berechne Qualitätsscore
+		const qualityScore = calculateQualityScore(nameForTags);
+		const qualityColorClass = qualityScore >= 9 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+									qualityScore >= 7 ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+									qualityScore >= 5 ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+									qualityScore >= 3 ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+									'bg-red-500/20 text-red-400 border-red-500/30';
+		
 		html += `
 			<div class="bg-gray-700/50 rounded-lg p-4 hover:bg-gray-700 transition-all duration-200">
 				<div class="flex items-start justify-between gap-4">
@@ -191,6 +185,9 @@ function displaySearchResults() {
 						<div class="flex items-center gap-2 mb-2 flex-wrap">
 							<h3 class="font-semibold text-white truncate">${escapeHtml(displayName)}</h3>
 							${seasonEpisode ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-600/50 text-gray-200 border border-gray-500/30">${seasonEpisode}</span>` : ''}
+							<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${qualityColorClass}">
+								Q: ${qualityScore}/10
+							</span>
 							<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${result.type === 'Serie' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'}">
 								${result.type}
 							</span>
@@ -212,16 +209,23 @@ function displaySearchResults() {
 						</div>
 						
 						${result.uploadTitle ? `<div class="text-xs text-gray-500 mt-1 truncate">${escapeHtml(result.uploadTitle)}</div>` : ''}
-						${result.type === 'Serie' ? `<div class="text-xs text-gray-500 mt-1 truncate">${escapeHtml(result.name)}</div>` : ''}
 					</div>
 					
 					${result.link ? `
-						<a href="${escapeHtml(result.link)}" target="_blank" rel="noopener noreferrer" class="flex-shrink-0 inline-flex items-center px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-lg hover:shadow-green-500/50">
-							<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-							</svg>
-							Forum
-						</a>
+						<div class="flex-shrink-0 flex flex-col gap-2">
+							<button onclick="downloadSFDLFromForum('${escapeHtml(result.link)}')" class="inline-flex items-center px-3 py-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-lg hover:shadow-purple-500/50">
+								<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+								</svg>
+								Download SFDL
+							</button>
+							<a href="${escapeHtml(result.link)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-lg hover:shadow-green-500/50">
+								<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+								</svg>
+								Forum
+							</a>
+						</div>
 					` : '<span class="text-xs text-gray-500 italic">Kein Link verfügbar</span>'}
 				</div>
 			</div>
@@ -330,6 +334,126 @@ function extractReleaseTags(filename) {
 	if (name.includes('INTERNAL')) tags.push({ text: 'INTERNAL', category: 'misc', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' });
 	
 	return tags;
+}
+
+// Calculate quality score from 1-10 based on release tags
+function calculateQualityScore(filename) {
+	if (!filename) return 0;
+	
+	const name = filename.toUpperCase();
+	let score = 5; // Basis-Score
+	
+	// Auflösung (wichtigster Faktor)
+	if (name.includes('2160P')) score += 2;
+	else if (name.includes('1440P')) score += 1.75;
+	else if (name.includes('1080P')) score += 2;
+	else if (name.includes('720P')) score += 0.5;
+	else if (name.includes('576P') || name.includes('480P')) score -= 1;
+	
+	// Quelle (zweitwichtigster Faktor)
+	if (name.includes('REMUX')) score += 2;
+	else if (name.includes('BLURAY') || name.includes('BDRIP')) score += 1.5;
+	else if (name.includes('WEB-DL') || name.includes('WEBDL')) score += 1.5;
+	else if (name.includes('WEBRIP') || name.includes('.WEB.')) score += 0.5;
+	else if (name.includes('HDTV')) score += 0;
+	else if (name.includes('DVDRIP')) score -= 1;
+	else if (name.includes('.CAM.')) score -= 3;
+	else if (name.includes('.MD.')) score -= 2;
+	
+	// HDR Bonus
+	if (name.includes('DOLBYVISION') || name.includes('DV.')) score += 1.5;
+	else if (name.includes('HDR10+')) score += 0.75;
+	else if (name.includes('HDR')) score += 0.5;
+	
+	// Video Codec
+	if (name.includes('AV1')) score += 0.5;
+	else if (name.includes('H265') || name.includes('X265') || name.includes('HEVC')) score += 0.25;
+	else if (name.includes('XVID')) score -= 0.5;
+	
+	// Audio Bonus/Penalty
+	if (name.includes('ATMOS') || name.includes('DTS-X')) score += 0.5;
+	else if (name.includes('TRUEHD') || name.includes('DTS-HD')) score += 0.25;
+	if (name.includes('.LD.')) score -= 1.5; // Line Dubbed = schlechte Tonqualität
+	
+	// Begrenze auf 1-10 Skala
+	score = Math.max(1, Math.min(10, score));
+	return Math.round(score * 10) / 10; // Auf eine Dezimalstelle runden
+}
+
+// Download SFDL from forum link
+function downloadSFDLFromForum(forumLink) {
+	// Show loading state
+	const button = event.target.closest('button');
+	const originalText = button.innerHTML;
+	button.disabled = true;
+	button.innerHTML = '<svg class="animate-spin h-4 w-4 mr-1.5 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Lädt...';
+	
+	fetch('/download_sfdl_url', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ url: forumLink })
+	})
+	.then(response => response.json())
+	.then(data => {
+		if (data.success) {
+			// Success feedback
+			button.innerHTML = '<svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>In Queue!';
+			button.classList.remove('from-purple-500', 'to-purple-600', 'hover:from-purple-600', 'hover:to-purple-700');
+			button.classList.add('from-green-500', 'to-green-600');
+			
+			// Show notification
+			console.log('SFDL Download gestartet: ' + data.filename);
+			
+			// Keep modal open for continued searching - Media bar will show download progress
+			// Note: Media bar is visible with higher z-index
+			
+			// Reload SFDL files list if function exists
+			if (typeof loadSFDLFiles === 'function') {
+				loadSFDLFiles();
+			}
+			
+			// Reset button after 2 seconds
+			setTimeout(() => {
+				button.innerHTML = originalText;
+				button.classList.remove('from-green-500', 'to-green-600');
+				button.classList.add('from-purple-500', 'to-purple-600', 'hover:from-purple-600', 'hover:to-purple-700');
+				button.disabled = false;
+			}, 2000);
+		} else {
+			// Error feedback
+			button.innerHTML = '<svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>Fehler!';
+			button.classList.remove('from-purple-500', 'to-purple-600');
+			button.classList.add('from-red-500', 'to-red-600');
+			
+			console.error('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+			alert('Fehler beim Download: ' + (data.error || 'Unbekannter Fehler'));
+			
+			// Reset button after 3 seconds
+			setTimeout(() => {
+				button.innerHTML = originalText;
+				button.classList.remove('from-red-500', 'to-red-600');
+				button.classList.add('from-purple-500', 'to-purple-600', 'hover:from-purple-600', 'hover:to-purple-700');
+				button.disabled = false;
+			}, 3000);
+		}
+	})
+	.catch(error => {
+		console.error('Fehler beim Herunterladen: ' + error);
+		button.innerHTML = '<svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>Fehler!';
+		button.classList.remove('from-purple-500', 'to-purple-600');
+		button.classList.add('from-red-500', 'to-red-600');
+		alert('Fehler beim Download: ' + error.message);
+		
+		// Reset button
+		setTimeout(() => {
+			button.innerHTML = originalText;
+			button.classList.remove('from-red-500', 'to-red-600');
+			button.classList.add('from-purple-500', 'to-purple-600', 'hover:from-purple-600', 'hover:to-purple-700');
+			button.disabled = false;
+		}, 3000);
+	});
 }
 
 // Search on Enter key
