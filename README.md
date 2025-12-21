@@ -41,18 +41,29 @@ Kopiere die Beispiel-Konfiguration:
 cp .env.example .env
 ```
 
-Öffne `.env` und passe die Pfade an:
+Öffne `.env` und passe die Einstellungen an:
 ```env
-# Wo landen die heruntergeladenen Dateien?
-FILES_DIR=/uploads
-DOWNLOADS_DIR=/files
+# Upload-Verzeichnis für SFDL-Dateien
+UPLOAD_DIR=/uploads
+
+# Medien-Hauptverzeichnis
+MEDIA_DIR=/files
+
+# Unterverzeichnisse (nutzen $MEDIA_DIR als Basis)
+SERIEN_DIR=$MEDIA_DIR/serien
+MOVIES_DIR=$MEDIA_DIR/movies
+DOKU_DIR=$MEDIA_DIR/docus
 
 # TMDB API Key für Film/Serien-Erkennung
 TMDB_API_KEY=dein_api_key_hier
 
 # Passwörter für Web-Interface
-START_PASSWORD=geheim123
-STOP_PASSWORD=stop456
+START_PASSWORD=letsgo
+STOP_PASSWORD=stopmedaddy
+
+# Optional: Forum-Login für automatischen SFDL-Link-Extrakt
+FORUM_USERNAME=dein_username
+FORUM_PASSWORD=dein_passwort
 ```
 
 **TMDB API Key bekommen:**
