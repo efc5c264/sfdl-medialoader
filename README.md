@@ -191,6 +191,23 @@ Season 02/
     Breaking.Bad.S02E01.mkv
 ```
 
+### Dokumentationen
+
+**Download:** `Planet.Earth.II.2016.COMPLETE.GERMAN.DOKU.1080p/`
+```
+Planet.Earth.II.E01.mkv
+Planet.Earth.II.E02.mkv
+Planet.Earth.II.E03.mkv
+```
+
+**Ergebnis:**
+```
+/docus/Planet.Earth.II.2016.COMPLETE.GERMAN.DOKU.1080p/
+  Planet.Earth.II.E01.mkv
+  Planet.Earth.II.E02.mkv
+  Planet.Earth.II.E03.mkv
+```
+
 ---
 
 ## Einstellungen
