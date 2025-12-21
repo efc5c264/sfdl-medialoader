@@ -195,18 +195,14 @@ Season 02/
 
 **Download:** `Planet.Earth.II.2016.COMPLETE.GERMAN.DOKU.1080p/`
 ```
-Planet.Earth.II.E01.mkv
-Planet.Earth.II.E02.mkv
-Planet.Earth.II.E03.mkv
+Planet.Earth.II.2016.E01.mkv
+Planet.Earth.II.2016.E02.mkv
+Planet.Earth.II.2016.sample.mkv (wird gelöscht)
 ```
 
-**Ergebnis:**
-```
-/docus/Planet.Earth.II.2016.COMPLETE.GERMAN.DOKU.1080p/
-  Planet.Earth.II.E01.mkv
-  Planet.Earth.II.E02.mkv
-  Planet.Earth.II.E03.mkv
-```
+**Ergebnis:** `/docus/Planet.Earth.II.2016.E01.mkv`, `/docus/Planet.Earth.II.2016.E02.mkv`
+
+> Dokus werden wie Filme behandelt - jede Datei landet direkt im Doku-Verzeichnis ohne Unterordner.
 
 ---
 
