@@ -22,6 +22,7 @@ Du lädst eine SFDL-Datei hoch, der Rest passiert automatisch:
 **Voraussetzungen:**
 - Python 3.7 oder höher
 - `unrar` (für Archive)
+- lftp
 
 **Schnell-Installation mit Script (Linux/Mac):**
 ```bash
@@ -401,4 +402,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
